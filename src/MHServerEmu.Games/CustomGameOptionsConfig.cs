@@ -4,6 +4,7 @@ namespace MHServerEmu.Games
 {
     public class CustomGameOptionsConfig : ConfigContainer
     {
+        public int AutosaveIntervalMinutes { get; private set; } = 15;
         public float ESCooldownOverrideMinutes { get; private set; } = -1f;
         public bool CombineESStacks { get; private set; } = false;
         public bool AutoUnlockAvatars { get; private set; } = true;
@@ -16,6 +17,7 @@ namespace MHServerEmu.Games
         public bool DisableAccountBinding { get; private set; } = false;
         public bool DisableCharacterBinding { get; private set; } = true;
         public bool UsePrestigeLootTable { get; private set; } = false;
+        public bool EnableUltimatePrestige { get; private set; } = false;
         public bool ApplyHiddenPvPDamageModifiers { get; private set; } = false;
     }
 }

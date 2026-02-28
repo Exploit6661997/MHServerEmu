@@ -29,6 +29,22 @@ namespace MHServerEmu.Core.Network
         RemoveResponse,
     }
 
+    public enum ChatRoomOperationType
+    {
+        Add,
+        Remove,
+    }
+
+    public enum AccountOperation
+    {
+        Create,
+        SetPlayerName,
+        SetPassword,
+        SetUserLevel,
+        SetFlag,
+        ClearFlag,
+    }
+
     #endregion
 
     public static class ServiceMessage
@@ -65,7 +81,7 @@ namespace MHServerEmu.Core.Network
             public readonly MailboxMessage Message = message;
         }
 
-        #region Game Instances
+        #region Player Manager
 
         public readonly struct GameInstanceOp(GameInstanceOpType type, ulong gameId)
             : IGameServiceMessage
@@ -102,6 +118,16 @@ namespace MHServerEmu.Core.Network
         {
             public readonly ulong RegionId = regionId;
             public readonly bool Success = success;
+        }
+
+        /// <summary>
+        /// [Game -> PlayerManager] Requests <see cref="RegionPlayerAccessVar"/> update for a region.
+        /// </summary>
+        public readonly struct SetRegionPlayerAccess(ulong regionId, RegionPlayerAccessVar playerAccess)
+            : IGameServiceMessage
+        {
+            public readonly ulong RegionId = regionId;
+            public readonly RegionPlayerAccessVar PlayerAccess = playerAccess;
         }
 
         /// <summary>
@@ -231,6 +257,15 @@ namespace MHServerEmu.Core.Network
         }
 
         /// <summary>
+        /// [Game -> PlayerManager] Notifies the Player Manager that a save happened and player data needs to be written to the database.
+        /// </summary>
+        public readonly struct PlayerDataUpdated(ulong playerDbId)
+            : IGameServiceMessage
+        {
+            public readonly ulong PlayerDbId = playerDbId;
+        }
+
+        /// <summary>
         /// [Game -> PlayerManager] Requests player dbid and properly cased name from the player manager.
         /// </summary>
         public readonly struct PlayerLookupByNameRequest(ulong gameId, ulong playerDbId, ulong remoteJobId, string requestPlayerName)
@@ -328,6 +363,9 @@ namespace MHServerEmu.Core.Network
             public readonly PartyOperationPayload Request = request;
         }
 
+        /// <summary>
+        /// [Game -> PlayerManager] Notifies the Player Manager of a player's current party boosts. 
+        /// </summary>
         public readonly struct PartyBoostUpdate(ulong playerDbId, List<ulong> boosts)
             : IGameServiceMessage
         {
@@ -375,6 +413,99 @@ namespace MHServerEmu.Core.Network
             public readonly PartyMemberInfo MemberInfo = memberInfo;
         }
 
+        /// <summary>
+        /// [PlayerManager -> Game] Notifies a player of a party kick grace period before they are removed from the current region.
+        /// </summary>
+        public readonly struct PartyKickGracePeriod(ulong gameId, ulong playerDbId, ulong expireTimeMicroseconds, GroupLeaveReason leaveReason)
+            : IGameServiceMessage
+        {
+            public readonly ulong GameId = gameId;
+            public readonly ulong PlayerDbId = playerDbId;
+            public readonly ulong ExpireTimeMicroseconds = expireTimeMicroseconds;
+            public readonly GroupLeaveReason LeaveReason = leaveReason;
+        }
+
+        /// <summary>
+        /// [Game -> PlayerManager] Routes guild messages to the player manager.
+        /// </summary>
+        public readonly struct GuildMessageToPlayerManager(GuildMessageSetToPlayerManager messages)
+            : IGameServiceMessage
+        {
+            public readonly GuildMessageSetToPlayerManager Messages = messages;
+        }
+
+        // NOTE: In the protocol for 1.53 there is a single GuildMessageToServer protobuf that is used for both client and server guild messages.
+        // Server messages don't actually need a list of players, and it makes more sense to split them.
+
+        /// <summary>
+        /// [PlayerManager -> Game] Routes guild messages from the player manager to a game instance.
+        /// </summary>
+        public readonly struct GuildMessageToServer(ulong gameId, GuildMessageSetToServer serverMessages)
+            : IGameServiceMessage
+        {
+            public readonly ulong GameId = gameId;
+            public readonly GuildMessageSetToServer Messages = serverMessages;
+        }
+
+        /// <summary>
+        /// [PlayerManager -> Game] Routes guilds messages from the player manager to a client in a game instance.
+        /// </summary>
+        public readonly struct GuildMessageToClient(ulong gameId, ulong playerDbId, GuildMessageSetToClient messages)
+            : IGameServiceMessage
+        {
+            public readonly ulong GameId = gameId;
+            public readonly ulong PlayerDbId = playerDbId;
+            public readonly GuildMessageSetToClient Messages = messages;
+        }
+
+        /// <summary>
+        /// [Game -> PlayerManager] Relays a match region request command from a client.
+        /// </summary>
+        public readonly struct MatchRegionRequestQueueCommand(ulong playerDbId, ulong regionProtoId, ulong difficultyTierProtoId, ulong metaStateProtoId, RegionRequestQueueCommandVar command, ulong regionRequestGroupId, ulong targetPlayerDbId)
+            : IGameServiceMessage
+        {
+            public readonly ulong PlayerDbId = playerDbId;
+            public readonly ulong RegionProtoId = regionProtoId;
+            public readonly ulong DifficultyTierProtoId = difficultyTierProtoId;
+            public readonly ulong MetaStateProtoId = metaStateProtoId;
+            public readonly RegionRequestQueueCommandVar Command = command;
+            public readonly ulong RegionRequestGroupId = regionRequestGroupId;
+            public readonly ulong TargetPlayerDbId = targetPlayerDbId;
+        }
+
+        // MatchQueueUpdate is based on PlayerMgrToGameServer.proto from 1.53
+        public readonly struct MatchQueueUpdateData(ulong updatePlayerGuid, RegionRequestQueueUpdateVar status, string updatePlayerName = null)
+        {
+            public readonly ulong UpdatePlayerGuid = updatePlayerGuid;
+            public readonly RegionRequestQueueUpdateVar Status = status;
+            public readonly string UpdatePlayerName = updatePlayerName;
+        }
+
+        /// <summary>
+        /// [PlayerManager -> Game] Updates the state of a MatchQueueStatus instance game-side.
+        /// </summary>
+        public readonly struct MatchQueueUpdate(ulong gameId, ulong playerDbId, ulong regionProtoId, ulong difficultyTierProtoId, int playersInQueue, ulong regionRequestGroupId, List<MatchQueueUpdateData> data)
+            : IGameServiceMessage
+        {
+            public readonly ulong GameId = gameId;
+            public readonly ulong PlayerDbId = playerDbId;
+            public readonly ulong RegionProtoId = regionProtoId;
+            public readonly ulong DifficultyTierProtoId = difficultyTierProtoId;
+            public readonly int PlayersInQueue = playersInQueue;
+            public readonly ulong RegionRequestGroupId = regionRequestGroupId;
+            public readonly List<MatchQueueUpdateData> Data = data;
+        }
+
+        /// <summary>
+        /// [PlayerManager -> Game] Clears the state of a MatchQueueStatus instance game-side.
+        /// </summary>
+        public readonly struct MatchQueueFlush(ulong gameId, ulong playerDbId)
+            : IGameServiceMessage
+        {
+            public readonly ulong GameId = gameId;
+            public readonly ulong PlayerDbId = playerDbId;
+        }
+
         #endregion
 
         #region Grouping Manager
@@ -420,6 +551,18 @@ namespace MHServerEmu.Core.Network
             : IGameServiceMessage
         {
             public readonly string NotificationText = notificationText;
+        }
+
+        /// <summary>
+        /// [PlayerManager -> GroupingManager] Adds/removes a player to/from the specified chat room.
+        /// </summary>
+        public readonly struct GroupingManagerChatRoomOperation(ChatRoomTypes roomType, ulong roomId, ulong playerDbId, ChatRoomOperationType operation)
+            : IGameServiceMessage
+        {
+            public readonly ChatRoomTypes RoomType = roomType;
+            public readonly ulong RoomId = roomId;
+            public readonly ulong PlayerDbId = playerDbId;
+            public readonly ChatRoomOperationType Operation = operation;
         }
 
         #endregion
@@ -655,6 +798,36 @@ namespace MHServerEmu.Core.Network
         {
             public readonly ulong RequestId = requestId;
             public readonly bool Result = result;
+        }
+
+        #endregion
+
+        #region Account
+
+        /// <summary>
+        /// [WebFrontend -> PlayerManager] Routes an account operation request to the Player Manager service.
+        /// </summary>
+        public readonly struct AccountOperationRequest(ulong requestId, AccountOperation operation, string email,
+            string playerName, string password, byte userLevel, int flags)
+            : IGameServiceMessage
+        {
+            public readonly ulong RequestId = requestId;
+            public readonly AccountOperation Operation = operation;
+            public readonly string Email = email;
+            public readonly string PlayerName = playerName;
+            public readonly string Password = password;
+            public readonly byte UserLevel = userLevel;
+            public readonly int Flags = flags;
+        }
+
+        /// <summary>
+        /// [PlayerManager -> WebFrontend] Routes a response to an account operation request back to the Web Frontend.
+        /// </summary>
+        public readonly struct AccountOperationResponse(ulong requestId, int resultCode)
+            : IGameServiceMessage
+        {
+            public readonly ulong RequestId = requestId;
+            public readonly int ResultCode = resultCode;
         }
 
         #endregion
